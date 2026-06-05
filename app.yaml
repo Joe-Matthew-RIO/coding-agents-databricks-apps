@@ -2,26 +2,21 @@ command:
   - gunicorn
   - app:app
 env:
+  - name: "SERVING_ENDPOINT"
+    valueFrom: "serving-endpoint"
+  - name: PIP_INDEX_URL
+    valueFrom: secret
+  - name: PIP_DEFAULT_TIMEOUT
+    value: 180
   - name: HOME
     value: /app/python/source_code
-  - name: ANTHROPIC_MODEL
-    value: databricks-claude-opus-4-7
-  - name: GEMINI_MODEL
-    value: databricks-gemini-2-5-pro
-  - name: CODEX_MODEL
-    value: databricks-gpt-5-5
-  - name: HERMES_MODEL
-    value: databricks-claude-opus-4-6
-  - name: HERMES_FALLBACK_MODEL
-    value: databricks-claude-opus-4-6
   # Set ENABLE_HERMES=false to skip Hermes Agent install. Other CLIs are unaffected.
   - name: ENABLE_HERMES
-    value: "true"
+    value: "false"
   - name: CLAUDE_CODE_DISABLE_AUTO_MEMORY
     value: 0
   - name: MAX_CONCURRENT_SESSIONS
     value: "5"
-
   # ─── Enterprise mode (proxy / registry redirects) ────────────────────────
   # Uncomment and set the env vars below to run CoDA in locked-down enterprise
   # networks. All are optional — set only what your environment requires.
