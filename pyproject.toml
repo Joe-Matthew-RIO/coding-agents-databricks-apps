@@ -2,7 +2,7 @@
 name = "coda"
 version = "0.18.3"
 description = "CoDA - Coding Agents on Databricks Apps"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "flask>=2.0",
     "flask-socketio>=5.0",
