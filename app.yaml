@@ -2,8 +2,6 @@ command:
   - gunicorn
   - app:app
 env:
-  - name: "SERVING_ENDPOINT"
-    valueFrom: "serving-endpoint"
   - name: PIP_INDEX_URL
     valueFrom: secret
   - name: PIP_DEFAULT_TIMEOUT
