@@ -106,15 +106,10 @@ setup_state = {
         {"id": "git",        "label": "Configuring git identity",     "status": "pending", "started_at": None, "completed_at": None, "error": None},
         {"id": "micro",      "label": "Installing micro editor",      "status": "pending", "started_at": None, "completed_at": None, "error": None},
         {"id": "gh",         "label": "Installing GitHub CLI",        "status": "pending", "started_at": None, "completed_at": None, "error": None},
-        {"id": "dbcli",     "label": "Upgrading Databricks CLI",     "status": "pending", "started_at": None, "completed_at": None, "error": None},
-        {"id": "proxy",   "label": "Starting content-filter proxy", "status": "pending", "started_at": None, "completed_at": None, "error": None},
+        {"id": "dbcli",      "label": "Upgrading Databricks CLI",     "status": "pending", "started_at": None, "completed_at": None, "error": None},
         {"id": "claude",     "label": "Configuring Claude CLI",       "status": "pending", "started_at": None, "completed_at": None, "error": None},
-        {"id": "codex",      "label": "Configuring Codex CLI",        "status": "pending", "started_at": None, "completed_at": None, "error": None},
-        {"id": "opencode",   "label": "Configuring OpenCode CLI",     "status": "pending", "started_at": None, "completed_at": None, "error": None},
-        {"id": "gemini",     "label": "Configuring Gemini CLI",       "status": "pending", "started_at": None, "completed_at": None, "error": None},
-        {"id": "hermes",     "label": "Configuring Hermes Agent",     "status": "pending", "started_at": None, "completed_at": None, "error": None},
         {"id": "databricks", "label": "Setting up Databricks CLI",    "status": "pending", "started_at": None, "completed_at": None, "error": None},
-        {"id": "mlflow",     "label": "Enabling MLflow tracing",       "status": "pending", "started_at": None, "completed_at": None, "error": None},
+        {"id": "mlflow",     "label": "Enabling MLflow tracing",      "status": "pending", "started_at": None, "completed_at": None, "error": None},
     ]
 }
 
@@ -132,6 +127,15 @@ def _get_setup_state_snapshot():
         return copy.deepcopy(setup_state)
 
 
+def _command_exists(cmd):
+    """Check if a command exists in PATH."""
+    try:
+        import shutil
+        return shutil.which(cmd) is not None
+    except Exception:
+        return False
+
+
 # Single-user security: only the token owner can access the terminal
 app_owner = None
 
@@ -147,6 +151,14 @@ def _run_step(step_id, command):
         local_bin = os.path.join(home, ".local", "bin")
         if local_bin not in env.get("PATH", ""):
             env["PATH"] = f"{local_bin}:{env.get('PATH', '')}"
+
+        # Check if required commands exist before running
+        if command and len(command) > 0:
+            cmd_name = command[0]
+            if cmd_name in ["bash", "uv"] and not _command_exists(cmd_name):
+                logger.warning(f"Skipping step {step_id}: {cmd_name} not available in container")
+                _update_step(step_id, status="skipped", completed_at=time.time())
+                return
         env.pop("DATABRICKS_CLIENT_ID", None)
         env.pop("DATABRICKS_CLIENT_SECRET", None)
 
@@ -155,10 +167,13 @@ def _run_step(step_id, command):
             _update_step(step_id, status="complete", completed_at=time.time())
         else:
             err = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+            logger.warning(f"Step {step_id} failed: {err[:200]}")
             _update_step(step_id, status="error", completed_at=time.time(), error=err[:500])
     except subprocess.TimeoutExpired:
+        logger.warning(f"Step {step_id} timed out after 300s")
         _update_step(step_id, status="error", completed_at=time.time(), error="Timed out after 300s")
     except Exception as e:
+        logger.warning(f"Step {step_id} failed with exception: {e}")
         _update_step(step_id, status="error", completed_at=time.time(), error=str(e))
 
 
@@ -420,16 +435,14 @@ def run_setup():
     # --- Content-filter proxy (must be running before OpenCode starts) ---
     # Sanitizes requests/responses between OpenCode and Databricks
     # (see OpenCode #5028, docs/plans/2026-03-11-litellm-empty-content-blocks-design.md)
-    _run_step("proxy", ["uv", "run", "python", "setup_proxy.py"])
+    _run_step("proxy", ["python", "setup_proxy.py"])
 
     # --- Parallel agent setup (all independent of each other) ---
+    # Use system python instead of 'uv run python' to avoid GitHub downloads
+    # Codex, OpenCode, Gemini, and Hermes skipped due to network restrictions
     parallel_steps = [
-        ("claude",     ["uv", "run", "python", "setup_claude.py"]),
-        ("codex",      ["uv", "run", "python", "setup_codex.py"]),
-        ("opencode",   ["uv", "run", "python", "setup_opencode.py"]),
-        ("gemini",     ["uv", "run", "python", "setup_gemini.py"]),
-        ("hermes",     ["uv", "run", "python", "setup_hermes.py"]),
-        ("databricks", ["uv", "run", "python", "setup_databricks.py"]),
+        ("claude",     ["python", "setup_claude.py"]),
+        ("databricks", ["python", "setup_databricks.py"]),
     ]
 
     with ThreadPoolExecutor(max_workers=len(parallel_steps)) as executor:
@@ -442,7 +455,7 @@ def run_setup():
     # --- MLflow setup runs AFTER claude setup to avoid settings.json race ---
     # setup_mlflow.py merges env vars into ~/.claude/settings.json which
     # setup_claude.py also writes; running sequentially prevents clobbering.
-    _run_step("mlflow", ["uv", "run", "python", "setup_mlflow.py"])
+    _run_step("mlflow", ["python", "setup_mlflow.py"])
 
     # Sync latest token into all CLI configs — covers the race where PAT
     # rotation happened while a setup script was still installing (the

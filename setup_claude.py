@@ -129,35 +129,50 @@ print(f"Onboarding skipped + MCPs configured ({len(mcp_servers)} servers): {clau
 local_bin = home / ".local" / "bin"
 claude_bin = local_bin / "claude"
 
-# Honour CLAUDE_INSTALLER_URL for enterprise environments where claude.ai is
-# firewalled — defaults to the public installer when unset. The URL is
-# validated by enterprise_config to reject shell metacharacters before it
-# reaches subprocess. Additionally, we avoid embedding the URL in a shell
-# string by piping curl's output into bash via positional args — even if a
-# malicious URL somehow slipped through validation, it would land as a curl
-# argument, not as shell.
-from enterprise_config import claude_installer_url
+# Check for offline installer first (for enterprise environments)
+offline_installer = Path(__file__).parent / "install_claude_offline.sh"
+if offline_installer.exists():
+    print("Using offline Claude CLI installer...")
+    result = subprocess.run(
+        ["bash", str(offline_installer)],
+        env={**os.environ, "HOME": str(home)},
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        print("Claude CLI wrapper installed successfully (offline mode)")
+        print(result.stdout)
+    else:
+        print(f"Offline install warning: {result.stderr}")
+elif os.environ.get("SKIP_CLI_INSTALL", "").lower() != "true":
+    # Fall back to online installer if offline one doesn't exist
+    from enterprise_config import claude_installer_url
 
-installer_url = claude_installer_url()
-print(f"Installing/upgrading Claude Code CLI from {installer_url}...")
-curl_proc = subprocess.Popen(
-    ["curl", "-fsSL", installer_url],
-    stdout=subprocess.PIPE,
-    env={**os.environ, "HOME": str(home)},
-)
-result = subprocess.run(
-    ["bash"],
-    stdin=curl_proc.stdout,
-    env={**os.environ, "HOME": str(home)},
-    capture_output=True,
-    text=True,
-)
-curl_proc.stdout.close()
-curl_proc.wait()
-if result.returncode == 0:
-    print("Claude Code CLI installed successfully")
+    installer_url = claude_installer_url()
+    if installer_url:  # Only try if URL is set (not empty)
+        print(f"Installing/upgrading Claude Code CLI from {installer_url}...")
+        curl_proc = subprocess.Popen(
+            ["curl", "-fsSL", installer_url],
+            stdout=subprocess.PIPE,
+            env={**os.environ, "HOME": str(home)},
+        )
+        result = subprocess.run(
+            ["bash"],
+            stdin=curl_proc.stdout,
+            env={**os.environ, "HOME": str(home)},
+            capture_output=True,
+            text=True,
+        )
+        curl_proc.stdout.close()
+        curl_proc.wait()
+        if result.returncode == 0:
+            print("Claude Code CLI installed successfully")
+        else:
+            print(f"CLI install warning: {result.stderr}")
+    else:
+        print("Skipping Claude CLI installation (no installer URL configured)")
 else:
-    print(f"CLI install warning: {result.stderr}")
+    print("Skipping Claude Code CLI installation (SKIP_CLI_INSTALL=true)")
 
 # 4. Copy subagent definitions to ~/.claude/agents/
 # These enable TDD workflow: prd-writer → test-generator → implementer → build-feature

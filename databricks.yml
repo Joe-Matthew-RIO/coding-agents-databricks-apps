@@ -1,0 +1,57 @@
+# This is a Declarative Automation Bundle definition for source-coda.
+# The Databricks extension requires databricks.yml configuration file.
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+
+bundle:
+  name: source-coda
+
+resources:
+  apps:
+    coda:
+      name: coda
+      description: "CoDA - Coding Agents on Databricks Apps"
+      source_code_path: .
+      resources:
+        - name: pip-index-url
+          secret:
+            scope: databricks-package-management
+            key: pip-index-url
+            permission: READ
+      config:
+        command:
+          - gunicorn
+          - app:app
+        env:
+          - name: PIP_INDEX_URL
+            value_from: pip-index-url
+          - name: PIP_DEFAULT_TIMEOUT
+            value: "180"
+          - name: HOME
+            value: /app/python/source_code
+          - name: ENABLE_HERMES
+            value: "false"
+          - name: CLAUDE_CODE_DISABLE_AUTO_MEMORY
+            value: "0"
+          - name: MAX_CONCURRENT_SESSIONS
+            value: "5"
+          - name: DATABRICKS_APP_NAME
+            value: coda
+          - name: DATABRICKS_HOST
+            value: https://dbc-49d12de4-531c.cloud.databricks.com
+          - name: ENTERPRISE_MODE
+            value: "true"
+          - name: CLAUDE_DBFS_PATH
+            value: "dbfs:/FileStore/binaries/claude-linux-binary"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://dbc-49d12de4-531c.cloud.databricks.com
+
+  ## Optionally, there could be 'staging' or 'prod' targets here.
+  #
+  # prod:
+  #   workspace:
+  #     host: https://dbc-49d12de4-531c.cloud.databricks.com
